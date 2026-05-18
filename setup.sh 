@@ -1,0 +1,11 @@
+#!/bin/bash
+echo "Setting up DTA Simulation..."
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip -q
+pip install -r requirements.txt -q
+mkdir -p data/raw data/processed data/adversarial results
+echo ""
+echo "Setup complete. Now:"
+echo "  1. Place your CICIDS CSV file in data/raw/"
+echo "  2. Run: python main.py"

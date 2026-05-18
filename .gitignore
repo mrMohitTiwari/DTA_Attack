@@ -1,0 +1,106 @@
+# =========================
+# Python cache / bytecode
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Build / packaging artifacts
+# =========================
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# =========================
+# Testing / coverage
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# =========================
+# Jupyter / IPython
+# =========================
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# =========================
+# IDE / Editor settings
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+*.key
+*.pem
+
+# =========================
+# Large datasets (do not push)
+# =========================
+data/raw/*
+data/processed/*
+data/adversarial/*
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/adversarial/.gitkeep
+
+# =========================
+# Generated results (do not push)
+# =========================
+results/*
+!results/.gitkeep
+
+# =========================
+# Optional model artifacts
+# =========================
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+*.onnx
+
+# =========================
+# Optional documentation builds
+# =========================
+docs/_build/
+
+# =========================
+# Optional setup artifacts
+# =========================
+*.sh~

@@ -31,6 +31,8 @@ def train(X_train, y_train):
     print("Training Decision Tree...")
     dt = DecisionTreeClassifier(**DT_PARAMS)
     dt.fit(X_tr, y_tr)
+    # training logisitic Regression
+
 
     model_path = os.path.join(MODELS_DIR, "dt.pkl")
     joblib.dump(dt, model_path)

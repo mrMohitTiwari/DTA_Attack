@@ -19,6 +19,7 @@ from src.data_loader              import prepare, load_processed
 from src.train_model              import train, evaluate_clean
 from src.dta_attack               import run_dta, load_adv
 from src.evaluate                 import evaluate
+from src.lr_pipeline import run_lr_pipeline
 from src.adversarial_training     import (
     generate_adv_for_training,
     build_expanded_dataset,
@@ -125,6 +126,41 @@ def main():
     plot_comparison_dashboard(
         comparison, X_test_sub, X_adv_test, y_test_sub
     )
+    # adding new code
+    
+# ── add at top with other imports ─────────────────────────────────
+
+
+# ── add after Step 7 in main() ────────────────────────────────────
+    # ── Step 8: Run full LR pipeline ──────────────────────────────
+    print("\n" + "="*60)
+    print("STEP 8: LOGISTIC REGRESSION PIPELINE")
+    print("="*60)
+
+    # Build DT results dict for LR vs DT comparison
+    dt_results_for_lr = {
+        "f1_clean":    attack_results["f1_clean"],
+        "f1_adv":      attack_results["f1_adv"],
+        "f1_defended": comparison["f1_def_adv"],
+        "orig_asr":    (comparison["orig_flipped"] /
+                        comparison["n_attack"] * 100),
+        "def_asr":     (comparison["def_flipped"] /
+                        comparison["n_attack"] * 100),
+    }
+
+    lr_results = run_lr_pipeline(
+        X_train, X_test, y_train, y_test,
+        dt_results=dt_results_for_lr
+    )
+
+    print("\n" + "="*60)
+    print("ALL STEPS COMPLETE")
+    print("="*60)
+    print("Results saved:")
+    print("  results/dta_analysis.png")
+    print("  results/adversarial_training_comparison.png")
+    print("  results/lr_adversarial_comparison.png")
+    print("  results/lr_vs_dt_comparison.png")
 
     # ── Final summary ───────────────────────────────────────────────
     print("\n" + "="*60)

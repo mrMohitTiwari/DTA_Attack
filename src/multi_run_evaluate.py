@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import numpy  as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import joblib
 
 from sklearn.tree    import DecisionTreeClassifier
@@ -227,8 +228,163 @@ def run_multi_seed_evaluation(X_train, X_test, y_train, y_test):
 
     return summary
 
+# adding code for visualisation
+def plot_multi_seed_results(summary):
+    """
+    Generate visualization charts for multi-seed evaluation.
+    """
 
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    per_run = summary["per_run"]
+
+    seeds = [r["seed"] for r in per_run]
+
+    f1_clean = [r["f1_clean_orig"] for r in per_run]
+    f1_orig  = [r["f1_adv_orig"] for r in per_run]
+    f1_def   = [r["f1_adv_def"] for r in per_run]
+
+    fooled_orig = [
+        100 * r["n_fooled_orig"] / r["n_total"]
+        for r in per_run
+    ]
+
+    fooled_def = [
+        100 * r["n_fooled_def"] / r["n_total"]
+        for r in per_run
+    ]
+
+    # ============================================================
+    # 1. F1 Scores Across Seeds
+    # ============================================================
+
+    plt.figure(figsize=(10,6))
+
+    plt.plot(seeds, f1_clean, marker='o', linewidth=2,
+             label="Clean F1")
+
+    plt.plot(seeds, f1_orig, marker='s', linewidth=2,
+             label="Original under DTA")
+
+    plt.plot(seeds, f1_def, marker='^', linewidth=2,
+             label="Defended under DTA")
+
+    plt.xlabel("Random Seed")
+    plt.ylabel("F1 Score")
+    plt.title("F1 Scores Across Random Seeds")
+    plt.ylim(0, 1.05)
+
+    plt.grid(True)
+    plt.legend()
+
+    path1 = os.path.join(RESULTS_DIR, "f1_scores_across_seeds.png")
+    plt.savefig(path1, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Saved: {path1}")
+
+    # ============================================================
+    # 2. Mean ± Std Bar Chart
+    # ============================================================
+
+    means = [
+        summary["mean_f1_clean"],
+        summary["mean_f1_orig_adv"],
+        summary["mean_f1_def_adv"]
+    ]
+
+    stds = [
+        summary["std_f1_clean"],
+        summary["std_f1_orig_adv"],
+        summary["std_f1_def_adv"]
+    ]
+
+    labels = [
+        "Clean",
+        "Original\nUnder DTA",
+        "Defended\nUnder DTA"
+    ]
+
+    plt.figure(figsize=(8,6))
+
+    plt.bar(labels, means, yerr=stds, capsize=8)
+
+    plt.ylabel("Mean F1 Score")
+    plt.title("Mean ± Std F1 Across Seeds")
+    plt.ylim(0, 1.05)
+
+    path2 = os.path.join(RESULTS_DIR, "mean_std_f1.png")
+    plt.savefig(path2, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Saved: {path2}")
+
+    # ============================================================
+    # 3. Attack Success Rate
+    # ============================================================
+
+    plt.figure(figsize=(10,6))
+
+    x = np.arange(len(seeds))
+    width = 0.35
+
+    plt.bar(x - width/2, fooled_orig, width,
+            label="Original Model")
+
+    plt.bar(x + width/2, fooled_def, width,
+            label="Defended Model")
+
+    plt.xticks(x, seeds)
+
+    plt.xlabel("Random Seed")
+    plt.ylabel("Attack Success Rate (%)")
+    plt.title("DTA Attack Success Rate")
+    plt.ylim(0, 105)
+
+    plt.legend()
+    plt.grid(axis='y')
+
+    path3 = os.path.join(RESULTS_DIR,
+                         "attack_success_rate.png")
+
+    plt.savefig(path3, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Saved: {path3}")
+
+    # ============================================================
+    # 4. F1 Recovery Visualization
+    # ============================================================
+
+    recovery = [
+        d - o for d, o in zip(f1_def, f1_orig)
+    ]
+
+    plt.figure(figsize=(10,6))
+
+    plt.bar(seeds, recovery)
+
+    plt.xlabel("Random Seed")
+    plt.ylabel("F1 Recovery")
+    plt.title("F1 Recovery After Adversarial Training")
+
+    plt.grid(axis='y')
+
+    path4 = os.path.join(RESULTS_DIR,
+                         "f1_recovery.png")
+
+    plt.savefig(path4, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Saved: {path4}")
 if __name__ == "__main__":
     from src.data_loader import load_processed
     X_train, X_test, y_train, y_test = load_processed()
-    run_multi_seed_evaluation(X_train, X_test, y_train, y_test)
+    summary = run_multi_seed_evaluation(
+    X_train,
+    X_test,
+    y_train,
+    y_test
+)
+
+plot_multi_seed_results(summary)

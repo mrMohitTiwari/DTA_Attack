@@ -17,7 +17,12 @@ DT_PARAMS = {
 }
 
 # Data settings
-TEST_SIZE        = 0.20
-RANDOM_STATE     = 42
-MAX_TRAIN_SAMPLES = 200_000   # cap for speed
-N_ATTACK_SAMPLES  = 2_000     # samples to run DTA on
+TEST_SIZE         = 0.20
+RANDOM_STATE      = 42
+MAX_TRAIN_SAMPLES = 200_000
+N_ATTACK_SAMPLES  = 2_000
+
+# Multi-run evaluation seeds
+# Each seed produces a differently trained model
+# This lets you compute mean and std F1 across 5 runs
+RANDOM_SEEDS = [42, 123, 456, 789, 1011]

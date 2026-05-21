@@ -17,6 +17,7 @@ import seaborn               as sns
 from sklearn.metrics import (confusion_matrix, roc_curve,
                               auc, precision_recall_curve)
 from config import RESULTS_DIR
+from src.lr_model import LR_PARAMS
 
 
 def plot_lr_dashboard(lr_orig, lr_def,

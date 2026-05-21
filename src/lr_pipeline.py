@@ -10,15 +10,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import numpy as np
 import joblib
-from config import MODELS_DIR, DATA_ADV
-from src.lr_model      import (train_lr, evaluate_lr,
-                                build_expanded_dataset_lr,
-                                train_defended_lr,
-                                compare_weights, LR_PARAMS)
-from src.attacks.fgsm_attack import (run_fgsm_on_lr,
-                                      load_lr_adv)
-from src.lr_visualise  import (plot_lr_dashboard,
-                                plot_lr_vs_dt_comparison)
+
+from config import MODELS_DIR, DATA_ADV, N_ATTACK_SAMPLES
+
+# ── ALL imports at top level — no imports inside functions ─────────
+from src.lr_model       import (train_lr, evaluate_lr,
+                                 build_expanded_dataset_lr,
+                                 train_defended_lr,
+                                 compare_weights,
+                                 LR_PARAMS)
+from src.attacks.fgsm_attack import run_fgsm_on_lr, load_lr_adv
+from src.lr_visualise   import (plot_lr_dashboard,
+                                 plot_lr_vs_dt_comparison)
 
 
 def run_lr_pipeline(X_train, X_test, y_train, y_test,
@@ -36,18 +39,7 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
       7. Evaluate defended LR under attack
       8. Compare weights original vs defended
       9. Visualise all results
-      10. Compare LR vs DT (if dt_results provided)
-
-    Args:
-        X_train    : clean training features
-        X_test     : clean test features
-        y_train    : training labels
-        y_test     : test labels
-        dt_results : dict of DT results for comparison
-                     (optional — pass None to skip LR vs DT plot)
-
-    Returns:
-        lr_results : dict of all metrics for further use
+      10. Compare LR vs DT if dt_results provided
     """
 
     # ── Step 1: Train original LR ──────────────────────────────────
@@ -93,38 +85,37 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
     )
     attack_metrics_orig["f1_clean"] = f1_clean
 
-    # ── Step 5: Generate FGSM samples from TRAINING set ───────────
+    # ── Step 5: Generate FGSM samples from training set ───────────
     print("\n" + "="*60)
     print("LR STEP 5: GENERATE FGSM ADVERSARIAL TRAINING SAMPLES")
     print("="*60)
     adv_train_path = os.path.join(DATA_ADV, "lr_X_adv_train.npy")
+    adv_label_path = os.path.join(DATA_ADV, "lr_y_adv_train.npy")
+
     if os.path.exists(adv_train_path):
         print("Cached adversarial training data — loading")
         X_adv_train = np.load(adv_train_path)
-        y_adv_train = np.load(
-            os.path.join(DATA_ADV, "lr_y_adv_train.npy")
-        )
+        y_adv_train = np.load(adv_label_path)
     else:
         print("Generating FGSM on training set subset...")
-        from src.attacks.fgsm_attack import run_fgsm_on_lr
-        from config import N_ATTACK_SAMPLES
-        attack_idx = np.where(y_train == 1)[0]
-        N          = min(N_ATTACK_SAMPLES, len(attack_idx))
-        X_tr_sub   = X_train[attack_idx[:N]]
-        y_tr_sub   = y_train[attack_idx[:N]]
+        attack_idx  = np.where(y_train == 1)[0]
+        N           = min(N_ATTACK_SAMPLES, len(attack_idx))
+        X_tr_sub    = X_train[attack_idx[:N]]
+        y_tr_sub    = y_train[attack_idx[:N]]
+
+        # run_fgsm_on_lr is imported at top — no local import needed
         X_adv_train, _, _ = run_fgsm_on_lr(
             lr_orig, X_tr_sub, y_tr_sub, eps=0.1
         )
         y_adv_train = y_tr_sub
+
         np.save(adv_train_path, X_adv_train)
-        np.save(
-            os.path.join(DATA_ADV, "lr_y_adv_train.npy"),
-            y_adv_train
-        )
+        np.save(adv_label_path, y_adv_train)
+        print(f"Adversarial training samples saved.")
 
     # ── Step 6: Build expanded dataset and retrain ─────────────────
     print("\n" + "="*60)
-    print("LR STEP 6: ADVERSARIAL TRAINING")
+    print("LR STEP 6: ADVERSARIAL TRAINING — RETRAIN ON EXPANDED DATA")
     print("="*60)
     defended_path = os.path.join(MODELS_DIR, "lr_defended.pkl")
     if os.path.exists(defended_path):
@@ -137,11 +128,10 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
         )
         lr_def = train_defended_lr(X_exp, y_exp)
 
-    # ── Step 7: Evaluate defended LR under attack ──────────────────
+    # ── Step 7: Evaluate defended LR ──────────────────────────────
     print("\n" + "="*60)
     print("LR STEP 7: EVALUATE DEFENDED LR UNDER FGSM")
     print("="*60)
-    # Evaluate defended LR on clean data too
     clean_def = evaluate_lr(
         lr_def, X_test, y_test,
         label="defended LR on clean data"
@@ -159,15 +149,16 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
     compare_weights(lr_orig, lr_def, n_features=10)
 
     # ── Compute attack success rates ───────────────────────────────
-    attack_idx  = np.where(y_test_sub == 1)[0]
-    n_atk       = len(attack_idx)
-    n_fool_orig = np.sum(
+    attack_idx   = np.where(y_test_sub == 1)[0]
+    n_atk        = len(attack_idx)
+    n_fool_orig  = int(np.sum(
         attack_metrics_orig["y_pred"][attack_idx] == 0
-    )
-    n_fool_def  = np.sum(
+    ))
+    n_fool_def   = int(np.sum(
         attack_metrics_def["y_pred"][attack_idx] == 0
-    )
+    ))
 
+    # ── Print final comparison table ──────────────────────────────
     print("\n" + "="*60)
     print("LR FINAL RESULTS")
     print("="*60)
@@ -181,13 +172,25 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
           f"{attack_metrics_def['f1']:>10.4f}")
     print(f"{'F1 recovery':<35} "
           f"{'—':>10} "
-          f"{attack_metrics_def['f1']-attack_metrics_orig['f1']:>+10.4f}")
+          f"{attack_metrics_def['f1'] - attack_metrics_orig['f1']:>+10.4f}")
     print(f"{'Attacks fooled':<35} "
           f"{n_fool_orig:>10} "
           f"{n_fool_def:>10}")
     print(f"{'Attack success rate':<35} "
           f"{n_fool_orig/n_atk:>10.2%} "
           f"{n_fool_def/n_atk:>10.2%}")
+
+    # ── Build results dict ─────────────────────────────────────────
+    lr_results = {
+        "f1_clean":      f1_clean,
+        "f1_adv":        attack_metrics_orig["f1"],
+        "f1_defended":   attack_metrics_def["f1"],
+        "orig_asr":      n_fool_orig / n_atk * 100,
+        "def_asr":       n_fool_def  / n_atk * 100,
+        "n_fooled_orig": n_fool_orig,
+        "n_fooled_def":  n_fool_def,
+        "n_attack":      n_atk,
+    }
 
     # ── Step 9: Visualise ──────────────────────────────────────────
     print("\n" + "="*60)
@@ -200,21 +203,16 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
     )
 
     # ── Step 10: LR vs DT comparison ──────────────────────────────
-    lr_results = {
-        "f1_clean":    f1_clean,
-        "f1_adv":      attack_metrics_orig["f1"],
-        "f1_defended": attack_metrics_def["f1"],
-        "orig_asr":    n_fool_orig / n_atk * 100,
-        "def_asr":     n_fool_def  / n_atk * 100,
-        "n_fooled_orig": n_fool_orig,
-        "n_fooled_def":  n_fool_def,
-        "n_attack":      n_atk,
-    }
-
     if dt_results is not None:
         print("\n" + "="*60)
-        print("LR STEP 10: LR vs DT COMPARISON")
+        print("LR STEP 10: LR vs DT COMPARISON CHART")
         print("="*60)
         plot_lr_vs_dt_comparison(lr_results, dt_results)
 
     return lr_results
+
+
+if __name__ == "__main__":
+    from src.data_loader import load_processed
+    X_train, X_test, y_train, y_test = load_processed()
+    run_lr_pipeline(X_train, X_test, y_train, y_test)

@@ -1,684 +1,344 @@
-# """
-# visualise.py
-# Topic: matplotlib, seaborn, gridspec, confusion matrix heatmap,
-#        histogram, pie chart, bar chart
-# What it does: creates a 6-panel dashboard saved as PNG,
-#               also exports a CSV of sample-level results
-# """
-# import os, sys
-# sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-# import numpy  as np
-# import pandas as pd
-# import matplotlib.pyplot as plt
-# import matplotlib.gridspec as gridspec
-# import seaborn as sns
-# from sklearn.metrics import confusion_matrix
-# from config import RESULTS_DIR
-
-
-# def plot_dashboard(results, X_clean, X_adv, y_true):
-#     os.makedirs(RESULTS_DIR, exist_ok=True)
-
-#     f1_clean    = results["f1_clean"]
-#     f1_adv      = results["f1_adv"]
-#     y_pred_clean= results["y_pred_clean"]
-#     y_pred_adv  = results["y_pred_adv"]
-#     n_flipped   = results["n_flipped"]
-#     attack_idx  = np.where(y_true == 1)[0]
-#     not_flipped = len(attack_idx) - n_flipped
-#     norms       = np.linalg.norm(X_adv - X_clean, axis=1)
-#     feat_changed= np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=1)
-
-#     fig = plt.figure(figsize=(18, 12))
-#     fig.suptitle("DTA (Decision Tree Attack) — Full Analysis",
-#                  fontsize=16, fontweight='bold', y=0.98)
-#     gs  = gridspec.GridSpec(2, 3, figure=fig,
-#                              hspace=0.45, wspace=0.38)
-
-#     # Panel 1: F1 bar chart
-#     ax1 = fig.add_subplot(gs[0, 0])
-#     bars = ax1.bar(['Clean', 'After DTA'],
-#                    [f1_clean, f1_adv],
-#                    color=['#2196F3', '#F44336'],
-#                    width=0.5, edgecolor='white')
-#     for bar, val in zip(bars, [f1_clean, f1_adv]):
-#         ax1.text(bar.get_x()+bar.get_width()/2, val+0.01,
-#                  f"{val:.4f}", ha='center', fontsize=11,
-#                  fontweight='bold')
-#     ax1.set_ylim(0, 1.15)
-#     ax1.set_ylabel("F1 Score")
-#     ax1.set_title("F1: Before vs After DTA")
-#     ax1.axhline(0.5, color='gray', linestyle='--',
-#                 linewidth=0.8, label='0.5 baseline')
-#     ax1.legend(fontsize=9)
-
-#     # Panel 2: Success pie
-#     ax2 = fig.add_subplot(gs[0, 1])
-#     ax2.pie(
-#         [n_flipped, not_flipped],
-#         labels=[f'Fooled\n({n_flipped})',
-#                 f'Not fooled\n({not_flipped})'],
-#         colors=['#F44336', '#2196F3'],
-#         autopct='%1.1f%%', startangle=90,
-#         textprops={'fontsize': 10}
-#     )
-#     ax2.set_title("DTA Success Rate")
-
-#     # Panel 3: Confusion matrix
-#     ax3 = fig.add_subplot(gs[0, 2])
-#     cm  = confusion_matrix(y_true, y_pred_adv)
-#     sns.heatmap(cm, annot=True, fmt='d', cmap='Reds',
-#                 xticklabels=['Pred BENIGN', 'Pred ATTACK'],
-#                 yticklabels=['True BENIGN', 'True ATTACK'],
-#                 ax=ax3, cbar=False)
-#     ax3.set_title("Confusion Matrix\n(After DTA)")
-#     ax3.set_ylabel("True label")
-#     ax3.set_xlabel("Predicted")
-
-#     # Panel 4: Perturbation histogram
-#     ax4 = fig.add_subplot(gs[1, 0])
-#     nz  = norms[norms > 1e-6]
-#     ax4.hist(nz, bins=50, color='#FF9800',
-#              edgecolor='white', alpha=0.85)
-#     ax4.axvline(nz.mean(), color='red', linestyle='--',
-#                 label=f"mean={nz.mean():.4f}")
-#     ax4.set_xlabel("||x_adv - x||₂")
-#     ax4.set_ylabel("Samples")
-#     ax4.set_title("Perturbation Size Distribution")
-#     ax4.legend(fontsize=9)
-
-#     # Panel 5: Features changed per sample
-#     ax5 = fig.add_subplot(gs[1, 1])
-#     uniq, cnts = np.unique(feat_changed, return_counts=True)
-#     ax5.bar(uniq.astype(str), cnts,
-#             color='#9C27B0', edgecolor='white', alpha=0.85)
-#     ax5.set_xlabel("Features changed per sample")
-#     ax5.set_ylabel("Number of samples")
-#     ax5.set_title("DTA Sparsity")
-
-#     # Panel 6: Most targeted features
-#     ax6 = fig.add_subplot(gs[1, 2])
-#     freq      = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=0)
-#     top_idx   = np.argsort(freq)[::-1][:10]
-#     ax6.barh([f"f{i}" for i in top_idx[::-1]],
-#              freq[top_idx[::-1]],
-#              color='#009688', edgecolor='white', alpha=0.85)
-#     ax6.set_xlabel("Times targeted by DTA")
-#     ax6.set_title("Top 10 Most Targeted Features")
-
-#     path = os.path.join(RESULTS_DIR, "dta_analysis.png")
-#     plt.savefig(path, dpi=150,
-#                 bbox_inches='tight', facecolor='white')
-#     plt.show()
-#     print(f"Saved: {path}")
-
-
-# def export_csv(X_clean, X_adv, y_true,
-#                y_pred_clean, y_pred_adv):
-#     os.makedirs(RESULTS_DIR, exist_ok=True)
-#     n = min(200, len(X_clean))
-#     norms = np.linalg.norm(X_adv - X_clean, axis=1)
-#     fc    = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=1)
-
-#     rows = [{
-#         "sample_index":       i,
-#         "true_label":         int(y_true[i]),
-#         "pred_clean":         int(y_pred_clean[i]),
-#         "pred_adversarial":   int(y_pred_adv[i]),
-#         "attack_succeeded":   int(y_true[i]==1 and
-#                                   y_pred_clean[i]==1 and
-#                                   y_pred_adv[i]==0),
-#         "n_features_changed": int(fc[i]),
-#         "perturbation_l2":    round(float(norms[i]), 6),
-#     } for i in range(n)]
-
-#     path = os.path.join(RESULTS_DIR, "dta_results.csv")
-#     pd.DataFrame(rows).to_csv(path, index=False)
-#     print(f"Saved: {path}")
-
-# def plot_comparison_dashboard(comparison, X_clean, X_adv, y_true):
-#     """
-#     6-panel dashboard comparing original vs defended model.
-#     This is the key visualisation that shows adversarial
-#     training working — your sir should see this clearly.
-#     """
-#     os.makedirs(RESULTS_DIR, exist_ok=True)
-
-#     f1_oc = comparison["f1_orig_clean"]
-#     f1_oa = comparison["f1_orig_adv"]
-#     f1_dc = comparison["f1_def_clean"]
-#     f1_da = comparison["f1_def_adv"]
-#     y_true_arr   = y_true
-#     y_orig_adv   = comparison["y_orig_adv"]
-#     y_def_adv    = comparison["y_def_adv"]
-#     n_attack     = comparison["n_attack"]
-#     orig_flipped = comparison["orig_flipped"]
-#     def_flipped  = comparison["def_flipped"]
-
-#     fig = plt.figure(figsize=(18, 12))
-#     fig.suptitle(
-#         "Adversarial Training Defence — Original vs Defended Model",
-#         fontsize=16, fontweight='bold', y=0.98
-#     )
-#     gs = gridspec.GridSpec(2, 3, figure=fig,
-#                            hspace=0.45, wspace=0.40)
-
-#     # ── Panel 1: F1 grouped bar chart ─────────────────────────────
-#     ax1   = fig.add_subplot(gs[0, 0])
-#     x     = np.arange(2)
-#     width = 0.35
-#     bars1 = ax1.bar(x - width/2,
-#                     [f1_oc, f1_oa],
-#                     width, label='Original model',
-#                     color='#F44336', edgecolor='white')
-#     bars2 = ax1.bar(x + width/2,
-#                     [f1_dc, f1_da],
-#                     width, label='Defended model',
-#                     color='#4CAF50', edgecolor='white')
-#     for bars in [bars1, bars2]:
-#         for bar in bars:
-#             ax1.text(bar.get_x()+bar.get_width()/2,
-#                      bar.get_height()+0.01,
-#                      f"{bar.get_height():.3f}",
-#                      ha='center', fontsize=9, fontweight='bold')
-#     ax1.set_xticks(x)
-#     ax1.set_xticklabels(['Clean data', 'Under DTA attack'])
-#     ax1.set_ylim(0, 1.2)
-#     ax1.set_ylabel("F1 Score")
-#     ax1.set_title("F1: Original vs Defended")
-#     ax1.legend(fontsize=9)
-#     ax1.axhline(0.5, color='gray', linestyle='--',
-#                 linewidth=0.8, alpha=0.6)
-
-#     # ── Panel 2: Attack success comparison bar ─────────────────────
-#     ax2 = fig.add_subplot(gs[0, 1])
-#     cats = ['Original\n(no defence)', 'Defended\n(adv. training)']
-#     vals = [orig_flipped / n_attack * 100,
-#             def_flipped  / n_attack * 100]
-#     colors = ['#F44336', '#4CAF50']
-#     bars = ax2.bar(cats, vals, color=colors,
-#                    edgecolor='white', width=0.5)
-#     for bar, val in zip(bars, vals):
-#         ax2.text(bar.get_x()+bar.get_width()/2,
-#                  val + 0.5,
-#                  f"{val:.1f}%",
-#                  ha='center', fontsize=11, fontweight='bold')
-#     ax2.set_ylabel("Attack success rate (%)")
-#     ax2.set_title("DTA Success Rate\nBefore vs After Defence")
-#     ax2.set_ylim(0, 110)
-
-#     # ── Panel 3: Confusion matrix — original model ─────────────────
-#     ax3 = fig.add_subplot(gs[0, 2])
-#     cm_orig = confusion_matrix(y_true_arr, y_orig_adv)
-#     sns.heatmap(cm_orig, annot=True, fmt='d', cmap='Reds',
-#                 xticklabels=['Pred BEN', 'Pred ATK'],
-#                 yticklabels=['True BEN', 'True ATK'],
-#                 ax=ax3, cbar=False)
-#     ax3.set_title("Confusion Matrix\nOriginal model under DTA")
-
-#     # ── Panel 4: Confusion matrix — defended model ─────────────────
-#     ax4 = fig.add_subplot(gs[1, 0])
-#     cm_def = confusion_matrix(y_true_arr, y_def_adv)
-#     sns.heatmap(cm_def, annot=True, fmt='d', cmap='Greens',
-#                 xticklabels=['Pred BEN', 'Pred ATK'],
-#                 yticklabels=['True BEN', 'True ATK'],
-#                 ax=ax4, cbar=False)
-#     ax4.set_title("Confusion Matrix\nDefended model under DTA")
-
-#     # ── Panel 5: F1 improvement arrow chart ───────────────────────
-#     ax5 = fig.add_subplot(gs[1, 1])
-#     metrics  = ['F1 (clean)', 'F1 (DTA attack)']
-#     orig_vals = [f1_oc, f1_oa]
-#     def_vals  = [f1_dc, f1_da]
-#     y_pos = np.array([0.7, 0.3])
-#     ax5.barh(y_pos + 0.12, orig_vals, height=0.18,
-#              color='#F44336', label='Original', alpha=0.85)
-#     ax5.barh(y_pos - 0.06, def_vals,  height=0.18,
-#              color='#4CAF50', label='Defended', alpha=0.85)
-#     ax5.set_yticks(y_pos)
-#     ax5.set_yticklabels(metrics)
-#     ax5.set_xlim(0, 1.1)
-#     ax5.set_xlabel("F1 Score")
-#     ax5.set_title("Side-by-side F1 Comparison")
-#     ax5.legend(fontsize=9)
-#     for i, (ov, dv) in enumerate(zip(orig_vals, def_vals)):
-#         ax5.text(ov+0.01, y_pos[i]+0.12, f"{ov:.3f}",
-#                  va='center', fontsize=9)
-#         ax5.text(dv+0.01, y_pos[i]-0.06, f"{dv:.3f}",
-#                  va='center', fontsize=9)
-
-#     # ── Panel 6: Summary text box ─────────────────────────────────
-#     ax6 = fig.add_subplot(gs[1, 2])
-#     ax6.axis('off')
-#     summary = (
-#         f"SUMMARY\n"
-#         f"{'─'*38}\n\n"
-#         f"Original model\n"
-#         f"  F1 (clean data):    {f1_oc:.4f}\n"
-#         f"  F1 (under DTA):     {f1_oa:.4f}\n"
-#         f"  Attacks fooled:     {orig_flipped}/{n_attack}\n"
-#         f"  Success rate:       {orig_flipped/n_attack:.2%}\n\n"
-#         f"Defended model\n"
-#         f"  F1 (clean data):    {f1_dc:.4f}\n"
-#         f"  F1 (under DTA):     {f1_da:.4f}\n"
-#         f"  Attacks fooled:     {def_flipped}/{n_attack}\n"
-#         f"  Success rate:       {def_flipped/n_attack:.2%}\n\n"
-#         f"F1 recovery:          {f1_da - f1_oa:+.4f}\n"
-#         f"Attack reduction:     "
-#         f"{(orig_flipped - def_flipped)/n_attack:.2%}"
-#     )
-#     ax6.text(0.05, 0.95, summary,
-#              transform=ax6.transAxes,
-#              fontsize=11, verticalalignment='top',
-#              fontfamily='monospace',
-#              bbox=dict(boxstyle='round', facecolor='#f5f5f5',
-#                        alpha=0.8, edgecolor='#cccccc'))
-
-#     path = os.path.join(RESULTS_DIR, "adversarial_training_comparison.png")
-#     plt.savefig(path, dpi=150,
-#                 bbox_inches='tight', facecolor='white')
-#     plt.show()
-#     print(f"Saved: {path}")
-# if __name__ == "__main__":
-#     import joblib
-#     from src.data_loader import load_processed
-#     from src.dta_attack  import load_adv
-#     from src.evaluate    import evaluate
-#     from config import MODELS_DIR
-#     _, X_test, _, y_test = load_processed()
-#     dt                   = joblib.load(os.path.join(MODELS_DIR, "dt.pkl"))
-#     X_adv, X_sub, y_sub  = load_adv()
-#     results              = evaluate(dt, X_sub, X_adv, y_sub)
-#     plot_dashboard(results, X_sub, X_adv, y_sub)
-#     export_csv(X_sub, X_adv, y_sub,
-#                results["y_pred_clean"], results["y_pred_adv"])
-# new code //////////////////
 """
-lr_visualise.py
-Topic: matplotlib subplots, seaborn heatmap, grouped bar charts,
-       weight visualisation, ROC curve, precision-recall tradeoff
-What it does: creates a comprehensive 9-panel dashboard comparing
-              original vs defended LR across all metrics
+visualise.py
+Topic: matplotlib, seaborn, gridspec, confusion matrix,
+       histogram, pie chart, bar chart, export CSV
+What it does: all visualisation functions for DT pipeline
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import numpy  as np
 import pandas as pd
-import matplotlib.pyplot     as plt
-import matplotlib.gridspec   as gridspec
-import matplotlib.patches    as mpatches
-import seaborn               as sns
-from sklearn.metrics import (confusion_matrix, roc_curve,
-                              auc, precision_recall_curve)
+import matplotlib.pyplot   as plt
+import matplotlib.gridspec as gridspec
+import seaborn             as sns
+from sklearn.metrics import confusion_matrix
 from config import RESULTS_DIR
 
 
-def plot_lr_dashboard(lr_orig, lr_def,
-                      X_clean, X_adv, y_true,
-                      metrics_orig, metrics_def):
+def plot_dashboard(results, X_clean, X_adv, y_true):
     """
-    9-panel comprehensive dashboard for LR comparison.
+    6-panel dashboard showing DTA attack impact on original model.
 
     Panels:
-    Row 1: F1 comparison | Attack success rate | Weight comparison
-    Row 2: CM original   | CM defended         | F1/Precision/Recall bars
-    Row 3: ROC curve     | Perturbation dist   | Summary text
+      1. F1 before vs after DTA
+      2. Attack success pie chart
+      3. Confusion matrix after DTA
+      4. Perturbation size distribution
+      5. DTA sparsity (features changed per sample)
+      6. Top 10 most targeted features
     """
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    y_pred_orig = metrics_orig["y_pred"]
-    y_pred_def  = metrics_def["y_pred"]
-
-    cm_orig = confusion_matrix(y_true, y_pred_orig)
-    cm_def  = confusion_matrix(y_true, y_pred_def)
-
+    f1_clean     = results["f1_clean"]
+    f1_adv       = results["f1_adv"]
+    y_pred_clean = results["y_pred_clean"]
+    y_pred_adv   = results["y_pred_adv"]
+    n_flipped    = results["n_flipped"]
     attack_idx   = np.where(y_true == 1)[0]
-    orig_fooled  = np.sum(
-        (metrics_orig["y_pred"][attack_idx] == 1) &
-        # was originally correct, now wrong after adv
-        # y_pred_orig here is prediction on ADV data
-        (y_pred_orig[attack_idx] == 0)
-    )
-    def_fooled = np.sum(y_pred_def[attack_idx] == 0)
-
-    f1_orig_clean = metrics_orig.get("f1_clean", 0)
-    f1_orig_adv   = metrics_orig["f1"]
-    f1_def_clean  = metrics_def.get("f1_clean", 0)
-    f1_def_adv    = metrics_def["f1"]
-
+    not_flipped  = len(attack_idx) - n_flipped
     norms        = np.linalg.norm(X_adv - X_clean, axis=1)
-    feat_changed = np.sum(
-        np.abs(X_adv - X_clean) > 1e-6, axis=1
-    )
+    feat_changed = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=1)
 
-    fig = plt.figure(figsize=(20, 16))
+    fig = plt.figure(figsize=(18, 12))
     fig.suptitle(
-        "Logistic Regression — Original vs Defended Model\n"
-        "(FGSM Adversarial Attack + Adversarial Training Defence)",
-        fontsize=15, fontweight='bold', y=0.98
+        "DTA (Decision Tree Attack) — Full Analysis",
+        fontsize=16, fontweight='bold', y=0.98
     )
-    gs = gridspec.GridSpec(3, 3, figure=fig,
-                           hspace=0.50, wspace=0.40)
+    gs = gridspec.GridSpec(2, 3, figure=fig,
+                           hspace=0.45, wspace=0.38)
 
-    # ── Panel 1: F1 grouped bar ────────────────────────────────────
+    # Panel 1: F1 bar chart
     ax1  = fig.add_subplot(gs[0, 0])
-    x    = np.arange(2)
-    w    = 0.35
-    b1   = ax1.bar(x - w/2,
-                   [f1_orig_clean, f1_orig_adv],
-                   w, label='Original LR',
-                   color='#F44336', edgecolor='white',
-                   alpha=0.9)
-    b2   = ax1.bar(x + w/2,
-                   [f1_def_clean, f1_def_adv],
-                   w, label='Defended LR',
-                   color='#4CAF50', edgecolor='white',
-                   alpha=0.9)
-    for bars in [b1, b2]:
-        for bar in bars:
-            h = bar.get_height()
-            ax1.text(bar.get_x()+bar.get_width()/2,
-                     h+0.01, f"{h:.3f}",
-                     ha='center', fontsize=9,
-                     fontweight='bold')
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(['Clean data', 'Under FGSM'])
-    ax1.set_ylim(0, 1.2)
+    bars = ax1.bar(
+        ['Clean', 'After DTA'],
+        [f1_clean, f1_adv],
+        color=['#2196F3', '#F44336'],
+        width=0.5, edgecolor='white'
+    )
+    for bar, val in zip(bars, [f1_clean, f1_adv]):
+        ax1.text(
+            bar.get_x()+bar.get_width()/2, val+0.01,
+            f"{val:.4f}", ha='center',
+            fontsize=11, fontweight='bold'
+        )
+    ax1.set_ylim(0, 1.15)
     ax1.set_ylabel("F1 Score")
-    ax1.set_title("F1: Original vs Defended LR")
-    ax1.legend(fontsize=9)
+    ax1.set_title("F1: Before vs After DTA")
     ax1.axhline(0.5, color='gray', linestyle='--',
-                linewidth=0.8, alpha=0.5)
+                linewidth=0.8, label='0.5 baseline')
+    ax1.legend(fontsize=9)
 
-    # ── Panel 2: Attack success rate ───────────────────────────────
-    ax2  = fig.add_subplot(gs[0, 1])
-    n_atk = len(attack_idx)
-    cats  = ['Original\n(no defence)', 'Defended\n(adv. training)']
-    vals  = [def_fooled / n_atk * 100,
-             np.sum(y_pred_def[attack_idx] == 0) / n_atk * 100]
-    cols  = ['#F44336', '#4CAF50']
-    bars  = ax2.bar(cats, vals, color=cols,
-                    edgecolor='white', width=0.5, alpha=0.9)
-    for bar, val in zip(bars, vals):
-        ax2.text(bar.get_x()+bar.get_width()/2,
-                 val+0.5, f"{val:.1f}%",
-                 ha='center', fontsize=11,
-                 fontweight='bold')
-    ax2.set_ylabel("FGSM attack success rate (%)")
-    ax2.set_title("FGSM Success Rate\nBefore vs After Defence")
-    ax2.set_ylim(0, 115)
-
-    # ── Panel 3: Weight comparison bar ────────────────────────────
-    ax3    = fig.add_subplot(gs[0, 2])
-    w_orig = lr_orig.coef_[0]
-    w_def  = lr_def.coef_[0]
-    w_diff = np.abs(w_def - w_orig)
-    top10  = np.argsort(w_diff)[::-1][:10]
-    y_pos  = np.arange(10)
-    ax3.barh(y_pos,      w_orig[top10[::-1]],
-             height=0.4, left=0,
-             color='#F44336', alpha=0.8,
-             label='Original')
-    ax3.barh(y_pos+0.4,  w_def[top10[::-1]],
-             height=0.4,
-             color='#4CAF50', alpha=0.8,
-             label='Defended')
-    ax3.set_yticks(y_pos+0.2)
-    ax3.set_yticklabels(
-        [f"f{i}" for i in top10[::-1]],
-        fontsize=9
+    # Panel 2: Success pie
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.pie(
+        [n_flipped, not_flipped],
+        labels=[f'Fooled\n({n_flipped})',
+                f'Not fooled\n({not_flipped})'],
+        colors=['#F44336', '#2196F3'],
+        autopct='%1.1f%%', startangle=90,
+        textprops={'fontsize': 10}
     )
-    ax3.set_xlabel("Weight value")
-    ax3.set_title("Top 10 Weight Changes\n"
-                  "from Adversarial Training")
-    ax3.legend(fontsize=9)
-    ax3.axvline(0, color='gray', linewidth=0.8)
+    ax2.set_title("DTA Success Rate")
 
-    # ── Panel 4: Confusion matrix — original ──────────────────────
+    # Panel 3: Confusion matrix
+    ax3 = fig.add_subplot(gs[0, 2])
+    cm  = confusion_matrix(y_true, y_pred_adv)
+    sns.heatmap(
+        cm, annot=True, fmt='d', cmap='Reds',
+        xticklabels=['Pred BENIGN', 'Pred ATTACK'],
+        yticklabels=['True BENIGN', 'True ATTACK'],
+        ax=ax3, cbar=False
+    )
+    ax3.set_title("Confusion Matrix\n(After DTA)")
+    ax3.set_ylabel("True label")
+    ax3.set_xlabel("Predicted")
+
+    # Panel 4: Perturbation histogram
     ax4 = fig.add_subplot(gs[1, 0])
-    sns.heatmap(cm_orig, annot=True, fmt='d', cmap='Reds',
-                xticklabels=['Pred BEN','Pred ATK'],
-                yticklabels=['True BEN','True ATK'],
-                ax=ax4, cbar=False)
-    ax4.set_title("Confusion Matrix\nOriginal LR under FGSM")
-
-    # ── Panel 5: Confusion matrix — defended ──────────────────────
-    ax5 = fig.add_subplot(gs[1, 1])
-    sns.heatmap(cm_def, annot=True, fmt='d', cmap='Greens',
-                xticklabels=['Pred BEN','Pred ATK'],
-                yticklabels=['True BEN','True ATK'],
-                ax=ax5, cbar=False)
-    ax5.set_title("Confusion Matrix\nDefended LR under FGSM")
-
-    # ── Panel 6: Precision / Recall / F1 triple bar ───────────────
-    ax6    = fig.add_subplot(gs[1, 2])
-    labels = ['Precision', 'Recall', 'F1']
-    orig_v = [metrics_orig['precision'],
-              metrics_orig['recall'],
-              metrics_orig['f1']]
-    def_v  = [metrics_def['precision'],
-              metrics_def['recall'],
-              metrics_def['f1']]
-    x6     = np.arange(3)
-    ax6.bar(x6 - 0.2, orig_v, 0.35,
-            label='Original', color='#F44336',
-            edgecolor='white', alpha=0.9)
-    ax6.bar(x6 + 0.2, def_v,  0.35,
-            label='Defended', color='#4CAF50',
-            edgecolor='white', alpha=0.9)
-    for i, (ov, dv) in enumerate(zip(orig_v, def_v)):
-        ax6.text(i-0.2, ov+0.01, f"{ov:.2f}",
-                 ha='center', fontsize=8)
-        ax6.text(i+0.2, dv+0.01, f"{dv:.2f}",
-                 ha='center', fontsize=8)
-    ax6.set_xticks(x6)
-    ax6.set_xticklabels(labels)
-    ax6.set_ylim(0, 1.2)
-    ax6.set_ylabel("Score")
-    ax6.set_title("Precision / Recall / F1\nUnder FGSM Attack")
-    ax6.legend(fontsize=9)
-
-    # ── Panel 7: ROC curve both models ────────────────────────────
-    ax7 = fig.add_subplot(gs[2, 0])
-    for model, label, color in [
-        (lr_orig, 'Original LR', '#F44336'),
-        (lr_def,  'Defended LR', '#4CAF50')
-    ]:
-        proba = model.predict_proba(X_adv)[:, 1]
-        fpr, tpr, _ = roc_curve(y_true, proba)
-        roc_auc     = auc(fpr, tpr)
-        ax7.plot(fpr, tpr, color=color, linewidth=2,
-                 label=f"{label} (AUC={roc_auc:.3f})")
-    ax7.plot([0,1],[0,1],'k--', linewidth=0.8, alpha=0.5)
-    ax7.set_xlabel("False Positive Rate")
-    ax7.set_ylabel("True Positive Rate")
-    ax7.set_title("ROC Curve\nUnder FGSM Attack")
-    ax7.legend(fontsize=9)
-    ax7.set_xlim(0, 1)
-    ax7.set_ylim(0, 1.05)
-
-    # ── Panel 8: Perturbation distribution ────────────────────────
-    ax8 = fig.add_subplot(gs[2, 1])
     nz  = norms[norms > 1e-6]
-    ax8.hist(nz, bins=50, color='#FF9800',
+    ax4.hist(nz, bins=50, color='#FF9800',
              edgecolor='white', alpha=0.85)
-    ax8.axvline(nz.mean(), color='red', linestyle='--',
+    ax4.axvline(nz.mean(), color='red', linestyle='--',
                 label=f"mean={nz.mean():.4f}")
-    ax8.set_xlabel("||x_adv - x||₂")
-    ax8.set_ylabel("Number of samples")
-    ax8.set_title("FGSM Perturbation Size\n"
-                  "(all features perturbed — unlike DTA)")
-    ax8.legend(fontsize=9)
+    ax4.set_xlabel("||x_adv - x||₂")
+    ax4.set_ylabel("Samples")
+    ax4.set_title("Perturbation Size Distribution")
+    ax4.legend(fontsize=9)
 
-    # ── Panel 9: Summary text box ──────────────────────────────────
-    ax9 = fig.add_subplot(gs[2, 2])
-    ax9.axis('off')
-    n_fooled_orig = np.sum(y_pred_orig[attack_idx] == 0)
-    n_fooled_def  = np.sum(y_pred_def[attack_idx]  == 0)
-    summary = (
-        f"LOGISTIC REGRESSION SUMMARY\n"
-        f"{'─'*36}\n\n"
-        f"Model: LR  C={LR_PARAMS['C']:.0f}\n"
-        f"Attack: FGSM  eps=0.1\n\n"
-        f"Original model\n"
-        f"  F1 (clean):      {f1_orig_clean:.4f}\n"
-        f"  F1 (FGSM):       {f1_orig_adv:.4f}\n"
-        f"  Attacks fooled:  {n_fooled_orig}/{n_atk}\n"
-        f"  Success rate:    "
-        f"{n_fooled_orig/n_atk:.2%}\n\n"
-        f"Defended model\n"
-        f"  F1 (clean):      {f1_def_clean:.4f}\n"
-        f"  F1 (FGSM):       {f1_def_adv:.4f}\n"
-        f"  Attacks fooled:  {n_fooled_def}/{n_atk}\n"
-        f"  Success rate:    "
-        f"{n_fooled_def/n_atk:.2%}\n\n"
-        f"Recovery:          "
-        f"{f1_def_adv - f1_orig_adv:+.4f}\n"
-        f"Attack reduction:  "
-        f"{(n_fooled_orig-n_fooled_def)/n_atk:.2%}\n\n"
-        f"Paper finding:\n"
-        f"  LR most robust against adv\n"
-        f"  attacks — small gradient\n"
-        f"  means weak perturbations"
+    # Panel 5: Features changed per sample
+    ax5 = fig.add_subplot(gs[1, 1])
+    uniq, cnts = np.unique(feat_changed, return_counts=True)
+    ax5.bar(uniq.astype(str), cnts,
+            color='#9C27B0', edgecolor='white', alpha=0.85)
+    ax5.set_xlabel("Features changed per sample")
+    ax5.set_ylabel("Number of samples")
+    ax5.set_title("DTA Sparsity")
+
+    # Panel 6: Most targeted features
+    ax6 = fig.add_subplot(gs[1, 2])
+    freq    = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=0)
+    top_idx = np.argsort(freq)[::-1][:10]
+    ax6.barh(
+        [f"f{i}" for i in top_idx[::-1]],
+        freq[top_idx[::-1]],
+        color='#009688', edgecolor='white', alpha=0.85
     )
-    ax9.text(0.03, 0.97, summary,
-             transform=ax9.transAxes,
-             fontsize=10, verticalalignment='top',
-             fontfamily='monospace',
-             bbox=dict(boxstyle='round',
-                       facecolor='#f5f5f5',
-                       alpha=0.8,
-                       edgecolor='#cccccc'))
+    ax6.set_xlabel("Times targeted by DTA")
+    ax6.set_title("Top 10 Most Targeted Features")
 
-    path = os.path.join(
-        RESULTS_DIR,
-        "lr_adversarial_comparison.png"
-    )
-    plt.savefig(path, dpi=150,
-                bbox_inches='tight',
-                facecolor='white')
-    plt.show()
-    print(f"Saved: {path}")
-    return path
-
-
-def plot_lr_vs_dt_comparison(lr_results, dt_results):
-    """
-    Side by side comparison of LR and DT results.
-    This directly connects to the paper's finding that
-    LR is more robust than DT against adversarial attacks.
-
-    Args:
-        lr_results : dict with lr f1 scores
-        dt_results : dict with dt f1 scores
-    """
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    fig.suptitle(
-        "LR vs DT — Adversarial Robustness Comparison\n"
-        "(Reproducing ELAT Paper Finding: "
-        "LR most robust classifier)",
-        fontsize=13, fontweight='bold'
-    )
-
-    # ── Plot 1: F1 clean comparison ───────────────────────────────
-    categories = ['Clean F1', 'Under Attack F1', 'Defended F1']
-    lr_vals    = [
-        lr_results['f1_clean'],
-        lr_results['f1_adv'],
-        lr_results['f1_defended']
-    ]
-    dt_vals    = [
-        dt_results['f1_clean'],
-        dt_results['f1_adv'],
-        dt_results['f1_defended']
-    ]
-    x = np.arange(3)
-    axes[0].bar(x-0.2, lr_vals, 0.35,
-                label='Logistic Regression',
-                color='#2196F3', edgecolor='white',
-                alpha=0.9)
-    axes[0].bar(x+0.2, dt_vals, 0.35,
-                label='Decision Tree',
-                color='#FF9800', edgecolor='white',
-                alpha=0.9)
-    for i, (lv, dv) in enumerate(zip(lr_vals, dt_vals)):
-        axes[0].text(i-0.2, lv+0.01, f"{lv:.2f}",
-                     ha='center', fontsize=8)
-        axes[0].text(i+0.2, dv+0.01, f"{dv:.2f}",
-                     ha='center', fontsize=8)
-    axes[0].set_xticks(x)
-    axes[0].set_xticklabels(categories, fontsize=9)
-    axes[0].set_ylim(0, 1.2)
-    axes[0].set_ylabel("F1 Score")
-    axes[0].set_title("F1 Scores: LR vs DT")
-    axes[0].legend(fontsize=9)
-
-    # ── Plot 2: Attack success rate ───────────────────────────────
-    models   = ['LR (FGSM)', 'DT (DTA)']
-    orig_asr = [lr_results['orig_asr'], dt_results['orig_asr']]
-    def_asr  = [lr_results['def_asr'],  dt_results['def_asr']]
-    x2       = np.arange(2)
-    axes[1].bar(x2-0.2, orig_asr, 0.35,
-                label='No defence',
-                color='#F44336', edgecolor='white',
-                alpha=0.9)
-    axes[1].bar(x2+0.2, def_asr, 0.35,
-                label='With adv. training',
-                color='#4CAF50', edgecolor='white',
-                alpha=0.9)
-    for i, (ov, dv) in enumerate(zip(orig_asr, def_asr)):
-        axes[1].text(i-0.2, ov+0.5, f"{ov:.1f}%",
-                     ha='center', fontsize=9,
-                     fontweight='bold')
-        axes[1].text(i+0.2, dv+0.5, f"{dv:.1f}%",
-                     ha='center', fontsize=9,
-                     fontweight='bold')
-    axes[1].set_xticks(x2)
-    axes[1].set_xticklabels(models)
-    axes[1].set_ylim(0, 120)
-    axes[1].set_ylabel("Attack success rate (%)")
-    axes[1].set_title("Attack Success Rate\nBefore vs After Defence")
-    axes[1].legend(fontsize=9)
-
-    # ── Plot 3: F1 drop and recovery ─────────────────────────────
-    models3  = ['LR', 'DT']
-    drop     = [
-        lr_results['f1_clean'] - lr_results['f1_adv'],
-        dt_results['f1_clean'] - dt_results['f1_adv']
-    ]
-    recovery = [
-        lr_results['f1_defended'] - lr_results['f1_adv'],
-        dt_results['f1_defended'] - dt_results['f1_adv']
-    ]
-    x3 = np.arange(2)
-    axes[2].bar(x3-0.2, drop,     0.35,
-                label='F1 drop (attack damage)',
-                color='#F44336', edgecolor='white',
-                alpha=0.9)
-    axes[2].bar(x3+0.2, recovery, 0.35,
-                label='F1 recovery (defence)',
-                color='#4CAF50', edgecolor='white',
-                alpha=0.9)
-    for i, (dr, rc) in enumerate(zip(drop, recovery)):
-        axes[2].text(i-0.2, dr+0.01, f"{dr:.3f}",
-                     ha='center', fontsize=9)
-        axes[2].text(i+0.2, rc+0.01, f"{rc:.3f}",
-                     ha='center', fontsize=9)
-    axes[2].set_xticks(x3)
-    axes[2].set_xticklabels(models3)
-    axes[2].set_ylim(0, 1.15)
-    axes[2].set_ylabel("F1 points")
-    axes[2].set_title("Attack Damage vs Defence Recovery\n"
-                      "(higher recovery = better defence)")
-    axes[2].legend(fontsize=9)
-
-    plt.tight_layout()
-    path = os.path.join(RESULTS_DIR, "lr_vs_dt_comparison.png")
+    path = os.path.join(RESULTS_DIR, "dta_analysis.png")
     plt.savefig(path, dpi=150,
                 bbox_inches='tight', facecolor='white')
     plt.show()
     print(f"Saved: {path}")
+
+
+def plot_comparison_dashboard(comparison, X_clean,
+                               X_adv, y_true):
+    """
+    6-panel dashboard comparing original vs defended DT model.
+
+    Panels:
+      1. F1 grouped bar — clean and under attack
+      2. Attack success rate before vs after defence
+      3. Confusion matrix — original model under DTA
+      4. Confusion matrix — defended model under DTA
+      5. Side-by-side F1 horizontal bars
+      6. Summary text box
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    f1_oc        = comparison["f1_orig_clean"]
+    f1_oa        = comparison["f1_orig_adv"]
+    f1_dc        = comparison["f1_def_clean"]
+    f1_da        = comparison["f1_def_adv"]
+    y_orig_adv   = comparison["y_orig_adv"]
+    y_def_adv    = comparison["y_def_adv"]
+    n_attack     = comparison["n_attack"]
+    orig_flipped = comparison["orig_flipped"]
+    def_flipped  = comparison["def_flipped"]
+
+    fig = plt.figure(figsize=(18, 12))
+    fig.suptitle(
+        "Adversarial Training Defence — Original vs Defended Model",
+        fontsize=16, fontweight='bold', y=0.98
+    )
+    gs = gridspec.GridSpec(2, 3, figure=fig,
+                           hspace=0.45, wspace=0.40)
+
+    # Panel 1: F1 grouped bar
+    ax1   = fig.add_subplot(gs[0, 0])
+    x     = np.arange(2)
+    width = 0.35
+    bars1 = ax1.bar(
+        x - width/2,
+        [f1_oc, f1_oa], width,
+        label='Original model',
+        color='#F44336', edgecolor='white'
+    )
+    bars2 = ax1.bar(
+        x + width/2,
+        [f1_dc, f1_da], width,
+        label='Defended model',
+        color='#4CAF50', edgecolor='white'
+    )
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            ax1.text(
+                bar.get_x()+bar.get_width()/2,
+                bar.get_height()+0.01,
+                f"{bar.get_height():.3f}",
+                ha='center', fontsize=9,
+                fontweight='bold'
+            )
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(['Clean data', 'Under DTA attack'])
+    ax1.set_ylim(0, 1.2)
+    ax1.set_ylabel("F1 Score")
+    ax1.set_title("F1: Original vs Defended")
+    ax1.legend(fontsize=9)
+    ax1.axhline(0.5, color='gray', linestyle='--',
+                linewidth=0.8, alpha=0.6)
+
+    # Panel 2: Attack success rate
+    ax2  = fig.add_subplot(gs[0, 1])
+    cats = ['Original\n(no defence)', 'Defended\n(adv. training)']
+    vals = [
+        orig_flipped / n_attack * 100,
+        def_flipped  / n_attack * 100
+    ]
+    bars = ax2.bar(cats, vals,
+                   color=['#F44336', '#4CAF50'],
+                   edgecolor='white', width=0.5)
+    for bar, val in zip(bars, vals):
+        ax2.text(
+            bar.get_x()+bar.get_width()/2,
+            val+0.5, f"{val:.1f}%",
+            ha='center', fontsize=11,
+            fontweight='bold'
+        )
+    ax2.set_ylabel("Attack success rate (%)")
+    ax2.set_title("DTA Success Rate\nBefore vs After Defence")
+    ax2.set_ylim(0, 110)
+
+    # Panel 3: CM original
+    ax3     = fig.add_subplot(gs[0, 2])
+    cm_orig = confusion_matrix(y_true, y_orig_adv)
+    sns.heatmap(
+        cm_orig, annot=True, fmt='d', cmap='Reds',
+        xticklabels=['Pred BEN', 'Pred ATK'],
+        yticklabels=['True BEN', 'True ATK'],
+        ax=ax3, cbar=False
+    )
+    ax3.set_title("Confusion Matrix\nOriginal model under DTA")
+
+    # Panel 4: CM defended
+    ax4    = fig.add_subplot(gs[1, 0])
+    cm_def = confusion_matrix(y_true, y_def_adv)
+    sns.heatmap(
+        cm_def, annot=True, fmt='d', cmap='Greens',
+        xticklabels=['Pred BEN', 'Pred ATK'],
+        yticklabels=['True BEN', 'True ATK'],
+        ax=ax4, cbar=False
+    )
+    ax4.set_title("Confusion Matrix\nDefended model under DTA")
+
+    # Panel 5: Side-by-side F1 bars
+    ax5       = fig.add_subplot(gs[1, 1])
+    metrics   = ['F1 (clean)', 'F1 (DTA attack)']
+    orig_vals = [f1_oc, f1_oa]
+    def_vals  = [f1_dc, f1_da]
+    y_pos     = np.array([0.7, 0.3])
+    ax5.barh(y_pos+0.12, orig_vals, height=0.18,
+             color='#F44336', label='Original', alpha=0.85)
+    ax5.barh(y_pos-0.06, def_vals,  height=0.18,
+             color='#4CAF50', label='Defended', alpha=0.85)
+    ax5.set_yticks(y_pos)
+    ax5.set_yticklabels(metrics)
+    ax5.set_xlim(0, 1.1)
+    ax5.set_xlabel("F1 Score")
+    ax5.set_title("Side-by-side F1 Comparison")
+    ax5.legend(fontsize=9)
+    for i, (ov, dv) in enumerate(zip(orig_vals, def_vals)):
+        ax5.text(ov+0.01, y_pos[i]+0.12,
+                 f"{ov:.3f}", va='center', fontsize=9)
+        ax5.text(dv+0.01, y_pos[i]-0.06,
+                 f"{dv:.3f}", va='center', fontsize=9)
+
+    # Panel 6: Summary text
+    ax6 = fig.add_subplot(gs[1, 2])
+    ax6.axis('off')
+    summary = (
+        f"SUMMARY\n"
+        f"{'─'*38}\n\n"
+        f"Original model\n"
+        f"  F1 (clean data):    {f1_oc:.4f}\n"
+        f"  F1 (under DTA):     {f1_oa:.4f}\n"
+        f"  Attacks fooled:     {orig_flipped}/{n_attack}\n"
+        f"  Success rate:       {orig_flipped/n_attack:.2%}\n\n"
+        f"Defended model\n"
+        f"  F1 (clean data):    {f1_dc:.4f}\n"
+        f"  F1 (under DTA):     {f1_da:.4f}\n"
+        f"  Attacks fooled:     {def_flipped}/{n_attack}\n"
+        f"  Success rate:       {def_flipped/n_attack:.2%}\n\n"
+        f"F1 recovery:          {f1_da - f1_oa:+.4f}\n"
+        f"Attack reduction:     "
+        f"{(orig_flipped-def_flipped)/n_attack:.2%}"
+    )
+    ax6.text(
+        0.05, 0.95, summary,
+        transform=ax6.transAxes,
+        fontsize=11, verticalalignment='top',
+        fontfamily='monospace',
+        bbox=dict(boxstyle='round',
+                  facecolor='#f5f5f5',
+                  alpha=0.8,
+                  edgecolor='#cccccc')
+    )
+
+    path = os.path.join(
+        RESULTS_DIR,
+        "adversarial_training_comparison.png"
+    )
+    plt.savefig(path, dpi=150,
+                bbox_inches='tight', facecolor='white')
+    plt.show()
+    print(f"Saved: {path}")
+
+
+def export_csv(X_clean, X_adv, y_true,
+               y_pred_clean, y_pred_adv):
+    """
+    Export sample-level results to CSV.
+    Shows original vs adversarial prediction per row.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    n     = min(200, len(X_clean))
+    norms = np.linalg.norm(X_adv - X_clean, axis=1)
+    fc    = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=1)
+
+    rows = [{
+        "sample_index":       i,
+        "true_label":         int(y_true[i]),
+        "pred_clean":         int(y_pred_clean[i]),
+        "pred_adversarial":   int(y_pred_adv[i]),
+        "attack_succeeded":   int(
+            y_true[i] == 1 and
+            y_pred_clean[i] == 1 and
+            y_pred_adv[i] == 0
+        ),
+        "n_features_changed": int(fc[i]),
+        "perturbation_l2":    round(float(norms[i]), 6),
+    } for i in range(n)]
+
+    path = os.path.join(RESULTS_DIR, "dta_results.csv")
+    pd.DataFrame(rows).to_csv(path, index=False)
+    print(f"Saved: {path}")
+
+
+if __name__ == "__main__":
+    print("visualise.py loaded — functions available:")
+    print("  plot_dashboard(results, X_clean, X_adv, y_true)")
+    print("  plot_comparison_dashboard(comparison, X_clean, X_adv, y_true)")
+    print("  export_csv(X_clean, X_adv, y_true, y_pred_clean, y_pred_adv)")

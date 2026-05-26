@@ -254,6 +254,111 @@ def plot_lr_fgsm_defense_summary(metrics_clean_orig, metrics_adv_orig,
     return path
 
 
+def plot_lr_zoo_dashboard(metrics_clean, metrics_zoo,
+                          X_clean, X_adv, y_true):
+    """
+    Compact dashboard for LR under ZOO black-box attack.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    y_pred_zoo = metrics_zoo["y_pred"]
+    attack_idx = np.where(y_true == 1)[0]
+    fooled = np.sum(y_pred_zoo[attack_idx] == 0)
+    n_attack = max(len(attack_idx), 1)
+    norms = np.linalg.norm(X_adv - X_clean, axis=1)
+    changed = np.sum(np.abs(X_adv - X_clean) > 1e-6, axis=1)
+
+    fig = plt.figure(figsize=(15, 9), constrained_layout=True)
+    fig.suptitle(
+        "Logistic Regression Under ZOO Black-Box Attack",
+        fontsize=15, fontweight="bold"
+    )
+    gs = gridspec.GridSpec(2, 3, figure=fig)
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    bars = ax1.bar(
+        ["Clean", "ZOO attack"],
+        [metrics_clean["f1"], metrics_zoo["f1"]],
+        color=["#2F80ED", "#D64545"],
+        edgecolor="white",
+        width=0.55,
+    )
+    for bar in bars:
+        h = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width() / 2,
+                 h + 0.015, f"{h:.3f}",
+                 ha="center", fontweight="bold")
+    ax1.set_ylim(0, 1.15)
+    ax1.set_ylabel("F1 score")
+    ax1.set_title("F1 Before vs After ZOO")
+    ax1.grid(axis="y", alpha=0.25)
+
+    ax2 = fig.add_subplot(gs[0, 1])
+    sns.heatmap(metrics_zoo["cm"], annot=True, fmt="d",
+                cmap="Reds", cbar=False, ax=ax2,
+                xticklabels=["Pred BENIGN", "Pred ATTACK"],
+                yticklabels=["True BENIGN", "True ATTACK"])
+    ax2.set_title("Confusion Matrix Under ZOO")
+
+    ax3 = fig.add_subplot(gs[0, 2])
+    bar = ax3.bar(["Attack rows fooled"], [fooled / n_attack * 100],
+                  color="#D64545", edgecolor="white", width=0.45)
+    ax3.text(bar[0].get_x() + bar[0].get_width() / 2,
+             fooled / n_attack * 100 + 1,
+             f"{fooled}/{n_attack}\n{fooled / n_attack:.1%}",
+             ha="center", fontweight="bold")
+    ax3.set_ylim(0, 110)
+    ax3.set_ylabel("Predicted BENIGN (%)")
+    ax3.set_title("ZOO Attack Success")
+    ax3.grid(axis="y", alpha=0.25)
+
+    ax4 = fig.add_subplot(gs[1, 0])
+    ax4.hist(norms[norms > 1e-9], bins=25, color="#F2994A",
+             edgecolor="white", alpha=0.9)
+    ax4.set_xlabel("||x_adv - x||2")
+    ax4.set_ylabel("Samples")
+    ax4.set_title("ZOO Perturbation Size")
+    if np.any(norms > 1e-9):
+        ax4.axvline(norms.mean(), color="#D64545",
+                    linestyle="--", label=f"mean={norms.mean():.3f}")
+        ax4.legend(fontsize=9)
+
+    ax5 = fig.add_subplot(gs[1, 1])
+    ax5.hist(changed, bins=20, color="#7E57C2",
+             edgecolor="white", alpha=0.9)
+    ax5.set_xlabel("Features changed per sample")
+    ax5.set_ylabel("Samples")
+    ax5.set_title("ZOO Feature Perturbation Count")
+
+    ax6 = fig.add_subplot(gs[1, 2])
+    ax6.axis("off")
+    summary = (
+        "ZOO SUMMARY\n"
+        "------------------------------\n\n"
+        "Attack type: black-box\n"
+        "Gradient access: no\n"
+        "Method: finite-difference queries\n\n"
+        f"Samples attacked: {len(y_true)}\n"
+        f"Attack rows:      {len(attack_idx)}\n"
+        f"Attack fooled:    {fooled}\n\n"
+        f"Clean F1:         {metrics_clean['f1']:.4f}\n"
+        f"ZOO F1:           {metrics_zoo['f1']:.4f}\n"
+        f"F1 drop:          "
+        f"{metrics_clean['f1'] - metrics_zoo['f1']:.4f}"
+    )
+    ax6.text(0.03, 0.97, summary, transform=ax6.transAxes,
+             va="top", fontsize=10, fontfamily="monospace",
+             bbox=dict(boxstyle="round,pad=0.6",
+                       facecolor="#f5f5f5",
+                       edgecolor="#cccccc"))
+
+    path = os.path.join(RESULTS_DIR, "lr_zoo_attack_dashboard.png")
+    plt.savefig(path, dpi=180, bbox_inches="tight", facecolor="white")
+    plt.show()
+    print(f"Saved: {path}")
+    return path
+
+
 def plot_lr_vs_dt_comparison(lr_results, dt_results):
     """
     Side by side comparison of LR and DT results.

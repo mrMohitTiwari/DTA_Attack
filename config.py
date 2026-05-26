@@ -21,6 +21,7 @@ TEST_SIZE         = 0.20
 RANDOM_STATE      = 42
 MAX_TRAIN_SAMPLES = 200_000
 N_ATTACK_SAMPLES  = 2_000
+N_ZOO_SAMPLES     = 40
 
 # Multi-run evaluation seeds
 # Each seed produces a differently trained model

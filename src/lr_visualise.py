@@ -14,8 +14,7 @@ import matplotlib.pyplot     as plt
 import matplotlib.gridspec   as gridspec
 import matplotlib.patches    as mpatches
 import seaborn               as sns
-from sklearn.metrics import (confusion_matrix, roc_curve,
-                              auc, precision_recall_curve)
+from sklearn.metrics import confusion_matrix
 from config import RESULTS_DIR
 from src.lr_model import LR_PARAMS
 
@@ -24,12 +23,11 @@ def plot_lr_dashboard(lr_orig, lr_def,
                       X_clean, X_adv, y_true,
                       metrics_orig, metrics_def):
     """
-    9-panel comprehensive dashboard for LR comparison.
+    6-panel dashboard for LR comparison.
 
     Panels:
-    Row 1: F1 comparison | Attack success rate | Weight comparison
-    Row 2: CM original   | CM defended         | F1/Precision/Recall bars
-    Row 3: ROC curve     | Perturbation dist   | Summary text
+    Row 1: F1 comparison | Attack success rate | Perturbation histogram
+    Row 2: CM original   | CM defended         | Summary text
     """
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -40,12 +38,7 @@ def plot_lr_dashboard(lr_orig, lr_def,
     cm_def  = confusion_matrix(y_true, y_pred_def)
 
     attack_idx   = np.where(y_true == 1)[0]
-    orig_fooled  = np.sum(
-        (metrics_orig["y_pred"][attack_idx] == 1) &
-        # was originally correct, now wrong after adv
-        # y_pred_orig here is prediction on ADV data
-        (y_pred_orig[attack_idx] == 0)
-    )
+    orig_fooled = np.sum(y_pred_orig[attack_idx] == 0)
     def_fooled = np.sum(y_pred_def[attack_idx] == 0)
 
     f1_orig_clean = metrics_orig.get("f1_clean", 0)
@@ -54,18 +47,13 @@ def plot_lr_dashboard(lr_orig, lr_def,
     f1_def_adv    = metrics_def["f1"]
 
     norms        = np.linalg.norm(X_adv - X_clean, axis=1)
-    feat_changed = np.sum(
-        np.abs(X_adv - X_clean) > 1e-6, axis=1
-    )
-
-    fig = plt.figure(figsize=(20, 16))
+    fig = plt.figure(figsize=(18, 11), constrained_layout=True)
     fig.suptitle(
         "Logistic Regression — Original vs Defended Model\n"
         "(FGSM Adversarial Attack + Adversarial Training Defence)",
-        fontsize=15, fontweight='bold', y=0.98
+        fontsize=15, fontweight='bold'
     )
-    gs = gridspec.GridSpec(3, 3, figure=fig,
-                           hspace=0.50, wspace=0.40)
+    gs = gridspec.GridSpec(2, 3, figure=fig)
 
     # ── Panel 1: F1 grouped bar ────────────────────────────────────
     ax1  = fig.add_subplot(gs[0, 0])
@@ -101,8 +89,8 @@ def plot_lr_dashboard(lr_orig, lr_def,
     ax2  = fig.add_subplot(gs[0, 1])
     n_atk = len(attack_idx)
     cats  = ['Original\n(no defence)', 'Defended\n(adv. training)']
-    vals  = [def_fooled / n_atk * 100,
-             np.sum(y_pred_def[attack_idx] == 0) / n_atk * 100]
+    vals  = [orig_fooled / n_atk * 100,
+             def_fooled / n_atk * 100]
     cols  = ['#F44336', '#4CAF50']
     bars  = ax2.bar(cats, vals, color=cols,
                     edgecolor='white', width=0.5, alpha=0.9)
@@ -115,31 +103,17 @@ def plot_lr_dashboard(lr_orig, lr_def,
     ax2.set_title("FGSM Success Rate\nBefore vs After Defence")
     ax2.set_ylim(0, 115)
 
-    # ── Panel 3: Weight comparison bar ────────────────────────────
-    ax3    = fig.add_subplot(gs[0, 2])
-    w_orig = lr_orig.coef_[0]
-    w_def  = lr_def.coef_[0]
-    w_diff = np.abs(w_def - w_orig)
-    top10  = np.argsort(w_diff)[::-1][:10]
-    y_pos  = np.arange(10)
-    ax3.barh(y_pos,      w_orig[top10[::-1]],
-             height=0.4, left=0,
-             color='#F44336', alpha=0.8,
-             label='Original')
-    ax3.barh(y_pos+0.4,  w_def[top10[::-1]],
-             height=0.4,
-             color='#4CAF50', alpha=0.8,
-             label='Defended')
-    ax3.set_yticks(y_pos+0.2)
-    ax3.set_yticklabels(
-        [f"f{i}" for i in top10[::-1]],
-        fontsize=9
-    )
-    ax3.set_xlabel("Weight value")
-    ax3.set_title("Top 10 Weight Changes\n"
-                  "from Adversarial Training")
+    # ── Panel 3: Perturbation distribution ────────────────────────
+    ax3 = fig.add_subplot(gs[0, 2])
+    nz  = norms[norms > 1e-6]
+    ax3.hist(nz, bins=50, color='#FF9800',
+             edgecolor='white', alpha=0.85)
+    ax3.axvline(nz.mean(), color='red', linestyle='--',
+                label=f"mean={nz.mean():.4f}")
+    ax3.set_xlabel("||x_adv - x||2")
+    ax3.set_ylabel("Number of samples")
+    ax3.set_title("FGSM Perturbation Size")
     ax3.legend(fontsize=9)
-    ax3.axvline(0, color='gray', linewidth=0.8)
 
     # ── Panel 4: Confusion matrix — original ──────────────────────
     ax4 = fig.add_subplot(gs[1, 0])
@@ -157,74 +131,14 @@ def plot_lr_dashboard(lr_orig, lr_def,
                 ax=ax5, cbar=False)
     ax5.set_title("Confusion Matrix\nDefended LR under FGSM")
 
-    # ── Panel 6: Precision / Recall / F1 triple bar ───────────────
+    # ── Panel 6: Summary text box ─────────────────────────────────
     ax6    = fig.add_subplot(gs[1, 2])
-    labels = ['Precision', 'Recall', 'F1']
-    orig_v = [metrics_orig['precision'],
-              metrics_orig['recall'],
-              metrics_orig['f1']]
-    def_v  = [metrics_def['precision'],
-              metrics_def['recall'],
-              metrics_def['f1']]
-    x6     = np.arange(3)
-    ax6.bar(x6 - 0.2, orig_v, 0.35,
-            label='Original', color='#F44336',
-            edgecolor='white', alpha=0.9)
-    ax6.bar(x6 + 0.2, def_v,  0.35,
-            label='Defended', color='#4CAF50',
-            edgecolor='white', alpha=0.9)
-    for i, (ov, dv) in enumerate(zip(orig_v, def_v)):
-        ax6.text(i-0.2, ov+0.01, f"{ov:.2f}",
-                 ha='center', fontsize=8)
-        ax6.text(i+0.2, dv+0.01, f"{dv:.2f}",
-                 ha='center', fontsize=8)
-    ax6.set_xticks(x6)
-    ax6.set_xticklabels(labels)
-    ax6.set_ylim(0, 1.2)
-    ax6.set_ylabel("Score")
-    ax6.set_title("Precision / Recall / F1\nUnder FGSM Attack")
-    ax6.legend(fontsize=9)
-
-    # ── Panel 7: ROC curve both models ────────────────────────────
-    ax7 = fig.add_subplot(gs[2, 0])
-    for model, label, color in [
-        (lr_orig, 'Original LR', '#F44336'),
-        (lr_def,  'Defended LR', '#4CAF50')
-    ]:
-        proba = model.predict_proba(X_adv)[:, 1]
-        fpr, tpr, _ = roc_curve(y_true, proba)
-        roc_auc     = auc(fpr, tpr)
-        ax7.plot(fpr, tpr, color=color, linewidth=2,
-                 label=f"{label} (AUC={roc_auc:.3f})")
-    ax7.plot([0,1],[0,1],'k--', linewidth=0.8, alpha=0.5)
-    ax7.set_xlabel("False Positive Rate")
-    ax7.set_ylabel("True Positive Rate")
-    ax7.set_title("ROC Curve\nUnder FGSM Attack")
-    ax7.legend(fontsize=9)
-    ax7.set_xlim(0, 1)
-    ax7.set_ylim(0, 1.05)
-
-    # ── Panel 8: Perturbation distribution ────────────────────────
-    ax8 = fig.add_subplot(gs[2, 1])
-    nz  = norms[norms > 1e-6]
-    ax8.hist(nz, bins=50, color='#FF9800',
-             edgecolor='white', alpha=0.85)
-    ax8.axvline(nz.mean(), color='red', linestyle='--',
-                label=f"mean={nz.mean():.4f}")
-    ax8.set_xlabel("||x_adv - x||₂")
-    ax8.set_ylabel("Number of samples")
-    ax8.set_title("FGSM Perturbation Size\n"
-                  "(all features perturbed — unlike DTA)")
-    ax8.legend(fontsize=9)
-
-    # ── Panel 9: Summary text box ──────────────────────────────────
-    ax9 = fig.add_subplot(gs[2, 2])
-    ax9.axis('off')
+    ax6.axis('off')
     n_fooled_orig = np.sum(y_pred_orig[attack_idx] == 0)
     n_fooled_def  = np.sum(y_pred_def[attack_idx]  == 0)
     summary = (
         f"LOGISTIC REGRESSION SUMMARY\n"
-        f"{'─'*36}\n\n"
+        f"{'-'*34}\n\n"
         f"Model: LR  C={LR_PARAMS['C']:.0f}\n"
         f"Attack: FGSM  eps=0.1\n\n"
         f"Original model\n"
@@ -242,17 +156,13 @@ def plot_lr_dashboard(lr_orig, lr_def,
         f"Recovery:          "
         f"{f1_def_adv - f1_orig_adv:+.4f}\n"
         f"Attack reduction:  "
-        f"{(n_fooled_orig-n_fooled_def)/n_atk:.2%}\n\n"
-        f"Paper finding:\n"
-        f"  LR most robust against adv\n"
-        f"  attacks — small gradient\n"
-        f"  means weak perturbations"
+        f"{(n_fooled_orig-n_fooled_def)/n_atk:.2%}"
     )
-    ax9.text(0.03, 0.97, summary,
-             transform=ax9.transAxes,
+    ax6.text(0.03, 0.97, summary,
+             transform=ax6.transAxes,
              fontsize=10, verticalalignment='top',
              fontfamily='monospace',
-             bbox=dict(boxstyle='round',
+             bbox=dict(boxstyle='round,pad=0.6',
                        facecolor='#f5f5f5',
                        alpha=0.8,
                        edgecolor='#cccccc'))
@@ -264,6 +174,81 @@ def plot_lr_dashboard(lr_orig, lr_def,
     plt.savefig(path, dpi=150,
                 bbox_inches='tight',
                 facecolor='white')
+    plt.show()
+    print(f"Saved: {path}")
+    return path
+
+
+def plot_lr_fgsm_defense_summary(metrics_clean_orig, metrics_adv_orig,
+                                 metrics_clean_def, metrics_adv_def,
+                                 y_true_adv):
+    """
+    Focused chart for the user-facing LR FGSM result:
+    F1 before/after adversarial training and confusion matrices.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    fig = plt.figure(figsize=(15, 8))
+    fig.suptitle(
+        "FGSM on Logistic Regression: Before vs After Adversarial Training",
+        fontsize=15, fontweight="bold"
+    )
+    gs = gridspec.GridSpec(2, 3, figure=fig,
+                           height_ratios=[1.0, 1.15],
+                           hspace=0.45, wspace=0.38)
+
+    ax1 = fig.add_subplot(gs[0, :])
+    labels = ["Original clean", "Original under FGSM",
+              "Defended clean", "Defended under FGSM"]
+    values = [metrics_clean_orig["f1"], metrics_adv_orig["f1"],
+              metrics_clean_def["f1"], metrics_adv_def["f1"]]
+    colors = ["#2F80ED", "#D64545", "#1F9D55", "#F2994A"]
+    bars = ax1.bar(labels, values, color=colors,
+                   edgecolor="white", width=0.58)
+    for bar, value in zip(bars, values):
+        ax1.text(bar.get_x() + bar.get_width() / 2,
+                 value + 0.015, f"{value:.3f}",
+                 ha="center", fontweight="bold")
+    ax1.set_ylim(0, 1.15)
+    ax1.set_ylabel("F1 score")
+    ax1.set_title("F1 Score Drop from FGSM and Recovery After Defense")
+    ax1.grid(axis="y", alpha=0.25)
+
+    ax2 = fig.add_subplot(gs[1, 0])
+    sns.heatmap(metrics_adv_orig["cm"], annot=True, fmt="d",
+                cmap="Reds", cbar=False, ax=ax2,
+                xticklabels=["Pred BENIGN", "Pred ATTACK"],
+                yticklabels=["True BENIGN", "True ATTACK"])
+    ax2.set_title("Original LR\nConfusion Matrix Under FGSM")
+
+    ax3 = fig.add_subplot(gs[1, 1])
+    sns.heatmap(metrics_adv_def["cm"], annot=True, fmt="d",
+                cmap="Greens", cbar=False, ax=ax3,
+                xticklabels=["Pred BENIGN", "Pred ATTACK"],
+                yticklabels=["True BENIGN", "True ATTACK"])
+    ax3.set_title("Defended LR\nConfusion Matrix Under FGSM")
+
+    ax4 = fig.add_subplot(gs[1, 2])
+    attack_idx = np.where(y_true_adv == 1)[0]
+    orig_fooled = np.sum(metrics_adv_orig["y_pred"][attack_idx] == 0)
+    def_fooled = np.sum(metrics_adv_def["y_pred"][attack_idx] == 0)
+    n_attack = max(len(attack_idx), 1)
+    vals = [orig_fooled / n_attack * 100,
+            def_fooled / n_attack * 100]
+    bars = ax4.bar(["Original", "Defended"], vals,
+                   color=["#D64545", "#1F9D55"],
+                   edgecolor="white", width=0.5)
+    for bar, value in zip(bars, vals):
+        ax4.text(bar.get_x() + bar.get_width() / 2,
+                 value + 1, f"{value:.1f}%",
+                 ha="center", fontweight="bold")
+    ax4.set_ylim(0, 110)
+    ax4.set_ylabel("Attack samples predicted BENIGN")
+    ax4.set_title("FGSM Attack Success Rate")
+    ax4.grid(axis="y", alpha=0.25)
+
+    path = os.path.join(RESULTS_DIR, "lr_fgsm_defense_summary.png")
+    plt.savefig(path, dpi=180, bbox_inches="tight", facecolor="white")
     plt.show()
     print(f"Saved: {path}")
     return path

@@ -1,26 +1,42 @@
 """
 fgsm_attack.py
-Topic: FGSM attack, gradient sign method, TensorFlowV2Classifier,
+Topic: FGSM attack, gradient sign method, Logistic Regression,
        continuous feature perturbation, epsilon budget
-What it does: wraps logistic regression for ART using a surrogate
-              DNN (because LR has no gradient in ART directly),
-              then runs FGSM to generate adversarial samples
-              that fool the LR classifier
+What it does: runs the exact FGSM formula for sklearn Logistic
+              Regression and stores the gradient/sign details used
+              to perturb real dataset samples.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.dirname(__file__))))
 
 import numpy  as np
-import joblib
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics      import f1_score
-from art.estimators.classification import SklearnClassifier
-from art.attacks.evasion           import FastGradientMethod
-from config import DATA_ADV, MODELS_DIR, N_ATTACK_SAMPLES
+from config import DATA_ADV, N_ATTACK_SAMPLES
 
 
-def run_fgsm_on_lr(lr, X_test, y_test, eps=0.1):
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def lr_loss_gradient(lr, X, y):
+    """
+    Binary logistic regression cross-entropy gradient:
+
+        p = sigmoid(w.x + b)
+        loss = -y log(p) - (1-y) log(1-p)
+        d loss / d x = (p - y) * w
+    """
+    w = lr.coef_[0]
+    b = lr.intercept_[0]
+    logits = X @ w + b
+    probs = sigmoid(logits)
+    gradients = (probs - y).reshape(-1, 1) * w.reshape(1, -1)
+    losses = -(y * np.log(probs + 1e-12) +
+               (1 - y) * np.log(1 - probs + 1e-12))
+    return gradients, probs, losses
+
+
+def run_fgsm_on_lr(lr, X_test, y_test, eps=0.1, save_prefix="lr"):
     """
     Run FGSM attack against Logistic Regression.
 
@@ -52,20 +68,18 @@ def run_fgsm_on_lr(lr, X_test, y_test, eps=0.1):
     X_sub = X_test[:N]
     y_sub = y_test[:N]
 
-    print(f"Wrapping LR for ART (SklearnClassifier)...")
-    art_lr = SklearnClassifier(
-        model=lr,
-        clip_values=(float(X_sub.min()), float(X_sub.max()))
-    )
-
-    print(f"Running FGSM (eps={eps}) on {N} samples...")
-    fgsm  = FastGradientMethod(estimator=art_lr, eps=eps)
-    X_adv = fgsm.generate(x=X_sub)
+    print(f"Running analytical FGSM for LR (eps={eps}) on {N} samples...")
+    gradients, _, _ = lr_loss_gradient(lr, X_sub, y_sub)
+    perturbation = eps * np.sign(gradients)
+    X_adv = X_sub + perturbation
 
     # Save
-    np.save(os.path.join(DATA_ADV, "lr_X_adv_fgsm.npy"), X_adv)
-    np.save(os.path.join(DATA_ADV, "lr_X_test_sub.npy"),  X_sub)
-    np.save(os.path.join(DATA_ADV, "lr_y_test_sub.npy"),  y_sub)
+    np.save(os.path.join(DATA_ADV, f"{save_prefix}_X_adv_fgsm.npy"),
+            X_adv)
+    np.save(os.path.join(DATA_ADV, f"{save_prefix}_X_test_sub.npy"),
+            X_sub)
+    np.save(os.path.join(DATA_ADV, f"{save_prefix}_y_test_sub.npy"),
+            y_sub)
 
     print(f"FGSM done. Adversarial shape: {X_adv.shape}")
     return X_adv, X_sub, y_sub

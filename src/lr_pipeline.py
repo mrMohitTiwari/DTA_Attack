@@ -17,11 +17,11 @@ from config import MODELS_DIR, DATA_ADV, N_ATTACK_SAMPLES
 from src.lr_model       import (train_lr, evaluate_lr,
                                  build_expanded_dataset_lr,
                                  train_defended_lr,
-                                 compare_weights,
-                                 LR_PARAMS)
+                                 compare_weights)
 from src.attacks.fgsm_attack import run_fgsm_on_lr, load_lr_adv
 from src.lr_visualise   import (plot_lr_dashboard,
-                                 plot_lr_vs_dt_comparison)
+                                 plot_lr_vs_dt_comparison,
+                                 plot_lr_fgsm_defense_summary)
 
 
 def run_lr_pipeline(X_train, X_test, y_train, y_test,
@@ -72,7 +72,7 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
         X_adv_test, X_test_sub, y_test_sub = load_lr_adv()
     else:
         X_adv_test, X_test_sub, y_test_sub = run_fgsm_on_lr(
-            lr_orig, X_test, y_test, eps=0.1
+            lr_orig, X_test, y_test, eps=0.1, save_prefix="lr"
         )
 
     # ── Step 4: Evaluate original LR under attack ─────────────────
@@ -92,7 +92,7 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
     adv_train_path = os.path.join(DATA_ADV, "lr_X_adv_train.npy")
     adv_label_path = os.path.join(DATA_ADV, "lr_y_adv_train.npy")
 
-    if os.path.exists(adv_train_path):
+    if os.path.exists(adv_train_path) and os.path.exists(adv_label_path):
         print("Cached adversarial training data — loading")
         X_adv_train = np.load(adv_train_path)
         y_adv_train = np.load(adv_label_path)
@@ -105,7 +105,8 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
 
         # run_fgsm_on_lr is imported at top — no local import needed
         X_adv_train, _, _ = run_fgsm_on_lr(
-            lr_orig, X_tr_sub, y_tr_sub, eps=0.1
+            lr_orig, X_tr_sub, y_tr_sub, eps=0.1,
+            save_prefix="lr_train"
         )
         y_adv_train = y_tr_sub
 
@@ -200,6 +201,11 @@ def run_lr_pipeline(X_train, X_test, y_train, y_test,
         lr_orig, lr_def,
         X_test_sub, X_adv_test, y_test_sub,
         attack_metrics_orig, attack_metrics_def
+    )
+    plot_lr_fgsm_defense_summary(
+        clean_metrics, attack_metrics_orig,
+        clean_def, attack_metrics_def,
+        y_test_sub
     )
 
     # ── Step 10: LR vs DT comparison ──────────────────────────────

@@ -147,6 +147,298 @@ def plot_comparison_dashboard(comparison, X_clean,
       5. Side-by-side F1 horizontal bars
       6. Summary text box
     """
+    def plot_multi_seed_dashboard(summary):
+   
+
+     os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    per_run = summary["per_run"]
+
+    seeds = [r["seed"] for r in per_run]
+
+    f1_clean = [r["f1_clean_orig"] for r in per_run]
+    f1_orig  = [r["f1_adv_orig"] for r in per_run]
+    f1_def   = [r["f1_adv_def"] for r in per_run]
+
+    fooled_orig = [
+        100 * r["n_fooled_orig"] / r["n_total"]
+        for r in per_run
+    ]
+
+    fooled_def = [
+        100 * r["n_fooled_def"] / r["n_total"]
+        for r in per_run
+    ]
+
+    recovery = [
+        d - o for d, o in zip(f1_def, f1_orig)
+    ]
+
+    # ============================================================
+    # FIGURE
+    # ============================================================
+
+    fig = plt.figure(figsize=(18, 12))
+
+    fig.suptitle(
+        "Multi-Seed Statistical Evaluation — DTA Robustness",
+        fontsize=18,
+        fontweight='bold',
+        y=0.98
+    )
+
+    gs = gridspec.GridSpec(
+        2, 3,
+        figure=fig,
+        hspace=0.42,
+        wspace=0.35
+    )
+
+    # ============================================================
+    # PANEL 1 — F1 across seeds
+    # ============================================================
+
+    ax1 = fig.add_subplot(gs[0, 0])
+
+    ax1.plot(
+        seeds, f1_clean,
+        marker='o',
+        linewidth=2.5,
+        label='Clean F1'
+    )
+
+    ax1.plot(
+        seeds, f1_orig,
+        marker='s',
+        linewidth=2.5,
+        label='Original under DTA'
+    )
+
+    ax1.plot(
+        seeds, f1_def,
+        marker='^',
+        linewidth=2.5,
+        label='Defended under DTA'
+    )
+
+    ax1.set_ylim(0, 1.05)
+    ax1.set_xlabel("Random Seed")
+    ax1.set_ylabel("F1 Score")
+    ax1.set_title("F1 Across Random Seeds")
+
+    ax1.grid(alpha=0.3)
+    ax1.legend(fontsize=9)
+
+    # ============================================================
+    # PANEL 2 — Mean ± std
+    # ============================================================
+
+    ax2 = fig.add_subplot(gs[0, 1])
+
+    means = [
+        summary["mean_f1_clean"],
+        summary["mean_f1_orig_adv"],
+        summary["mean_f1_def_adv"]
+    ]
+
+    stds = [
+        summary["std_f1_clean"],
+        summary["std_f1_orig_adv"],
+        summary["std_f1_def_adv"]
+    ]
+
+    labels = [
+        "Clean",
+        "Original\nUnder DTA",
+        "Defended\nUnder DTA"
+    ]
+
+    bars = ax2.bar(
+        labels,
+        means,
+        yerr=stds,
+        capsize=8,
+        color=['#2196F3', '#F44336', '#4CAF50'],
+        edgecolor='white'
+    )
+
+    for bar, val in zip(bars, means):
+        ax2.text(
+            bar.get_x() + bar.get_width()/2,
+            val + 0.02,
+            f"{val:.3f}",
+            ha='center',
+            fontsize=10,
+            fontweight='bold'
+        )
+
+    ax2.set_ylim(0, 1.1)
+    ax2.set_ylabel("Mean F1")
+    ax2.set_title("Mean ± Std F1")
+
+    # ============================================================
+    # PANEL 3 — Attack success rates
+    # ============================================================
+
+    ax3 = fig.add_subplot(gs[0, 2])
+
+    x = np.arange(len(seeds))
+    width = 0.35
+
+    bars1 = ax3.bar(
+        x - width/2,
+        fooled_orig,
+        width,
+        label='Original',
+        color='#F44336',
+        edgecolor='white'
+    )
+
+    bars2 = ax3.bar(
+        x + width/2,
+        fooled_def,
+        width,
+        label='Defended',
+        color='#4CAF50',
+        edgecolor='white'
+    )
+
+    ax3.set_xticks(x)
+    ax3.set_xticklabels(seeds)
+
+    ax3.set_ylim(0, 105)
+
+    ax3.set_xlabel("Random Seed")
+    ax3.set_ylabel("Attack Success Rate (%)")
+
+    ax3.set_title("Attack Success Rate")
+
+    ax3.legend(fontsize=9)
+
+    # ============================================================
+    # PANEL 4 — F1 recovery
+    # ============================================================
+
+    ax4 = fig.add_subplot(gs[1, 0])
+
+    bars = ax4.bar(
+        seeds,
+        recovery,
+        color='#9C27B0',
+        edgecolor='white',
+        alpha=0.9
+    )
+
+    for bar, val in zip(bars, recovery):
+        ax4.text(
+            bar.get_x() + bar.get_width()/2,
+            val + 0.01,
+            f"{val:.3f}",
+            ha='center',
+            fontsize=9
+        )
+
+    ax4.set_xlabel("Random Seed")
+    ax4.set_ylabel("F1 Recovery")
+
+    ax4.set_title(
+        "Recovery After Adversarial Training"
+    )
+
+    ax4.grid(axis='y', alpha=0.3)
+
+    # ============================================================
+    # PANEL 5 — Boxplot stability
+    # ============================================================
+
+    ax5 = fig.add_subplot(gs[1, 1])
+
+    sns.boxplot(
+        data=[f1_clean, f1_orig, f1_def],
+        palette=['#2196F3', '#F44336', '#4CAF50'],
+        ax=ax5
+    )
+
+    ax5.set_xticklabels([
+        'Clean',
+        'Original\nDTA',
+        'Defended\nDTA'
+    ])
+
+    ax5.set_ylabel("F1 Score")
+
+    ax5.set_title("Variance / Stability Analysis")
+
+    # ============================================================
+    # PANEL 6 — Statistical summary
+    # ============================================================
+
+    ax6 = fig.add_subplot(gs[1, 2])
+
+    ax6.axis('off')
+
+    summary_txt = (
+        f"SUMMARY\n"
+        f"{'─'*42}\n\n"
+        f"Runs evaluated:      {len(seeds)}\n\n"
+
+        f"Clean F1\n"
+        f"  Mean:              "
+        f"{summary['mean_f1_clean']:.4f}\n"
+        f"  Std:               "
+        f"{summary['std_f1_clean']:.4f}\n\n"
+
+        f"Original model under DTA\n"
+        f"  Mean F1:           "
+        f"{summary['mean_f1_orig_adv']:.4f}\n"
+        f"  Std:               "
+        f"{summary['std_f1_orig_adv']:.4f}\n\n"
+
+        f"Defended model under DTA\n"
+        f"  Mean F1:           "
+        f"{summary['mean_f1_def_adv']:.4f}\n"
+        f"  Std:               "
+        f"{summary['std_f1_def_adv']:.4f}\n\n"
+
+        f"Average F1 recovery:\n"
+        f"  {summary['mean_f1_def_adv'] - summary['mean_f1_orig_adv']:+.4f}"
+    )
+
+    ax6.text(
+        0.05,
+        0.95,
+        summary_txt,
+        transform=ax6.transAxes,
+        fontsize=11,
+        verticalalignment='top',
+        fontfamily='monospace',
+        bbox=dict(
+            boxstyle='round',
+            facecolor='#f5f5f5',
+            edgecolor='#cccccc',
+            alpha=0.9
+        )
+    )
+
+    # ============================================================
+    # SAVE
+    # ============================================================
+
+    path = os.path.join(
+        RESULTS_DIR,
+        "multi_seed_dashboard.png"
+    )
+
+    plt.savefig(
+        path,
+        dpi=150,
+        bbox_inches='tight',
+        facecolor='white'
+    )
+
+    plt.show()
+
+    print(f"Saved: {path}")
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     f1_oc        = comparison["f1_orig_clean"]

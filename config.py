@@ -27,3 +27,8 @@ N_ZOO_SAMPLES     = 40
 # Each seed produces a differently trained model
 # This lets you compute mean and std F1 across 5 runs
 RANDOM_SEEDS = [42, 123, 456, 789, 1011]
+
+# ELAT paper reported average recovered F1 after ELAT defence.
+# Source: "ELAT: Ensemble Learning with Adversarial Training in
+# defending against evaded intrusions", JISA 2022.
+ELAT_REFERENCE_F1 = 0.91

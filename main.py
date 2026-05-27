@@ -20,6 +20,7 @@ from src.train_model              import train, evaluate_clean
 from src.dta_attack               import run_dta, load_adv
 from src.evaluate                 import evaluate
 from src.lr_pipeline import run_lr_pipeline
+from src.lr_visualise import plot_elat_f1_heatmap
 from src.adversarial_training     import (
     generate_adv_for_training,
     build_expanded_dataset,
@@ -152,6 +153,7 @@ def main():
         X_train, X_test, y_train, y_test,
         dt_results=dt_results_for_lr
     )
+    plot_elat_f1_heatmap(lr_results, dt_results_for_lr)
 
     print("\n" + "="*60)
     print("ALL STEPS COMPLETE")
@@ -161,6 +163,7 @@ def main():
     print("  results/adversarial_training_comparison.png")
     print("  results/lr_adversarial_comparison.png")
     print("  results/lr_vs_dt_comparison.png")
+    print("  results/elat_f1_heatmap.png")
 
     # ── Final summary ───────────────────────────────────────────────
     print("\n" + "="*60)

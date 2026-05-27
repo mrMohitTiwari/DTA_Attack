@@ -15,7 +15,7 @@ import matplotlib.gridspec   as gridspec
 import matplotlib.patches    as mpatches
 import seaborn               as sns
 from sklearn.metrics import confusion_matrix
-from config import RESULTS_DIR
+from config import ELAT_REFERENCE_F1, RESULTS_DIR
 from src.lr_model import LR_PARAMS
 
 
@@ -477,3 +477,89 @@ def plot_lr_vs_dt_comparison(lr_results, dt_results):
                 bbox_inches='tight', facecolor='white')
     plt.show()
     print(f"Saved: {path}")
+
+
+def plot_elat_f1_heatmap(lr_results, dt_results,
+                         elat_f1=ELAT_REFERENCE_F1):
+    """
+    Compare our adversarial-trained F1 scores with ELAT reference F1.
+
+    ELAT reference is the reported average recovered F1 score from:
+    "ELAT: Ensemble Learning with Adversarial Training in defending
+    against evaded intrusions", Journal of Information Security and
+    Applications, 2022.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    heatmap_values = pd.DataFrame(
+        {
+            "Our adv-trained F1": [
+                lr_results["f1_defended"],
+                dt_results["f1_defended"],
+            ],
+            "ELAT avg F1": [
+                elat_f1,
+                elat_f1,
+            ],
+        },
+        index=["Logistic Regression", "Decision Tree"],
+    )
+
+    diff_values = heatmap_values.copy()
+    diff_values["Difference vs ELAT"] = (
+        heatmap_values["Our adv-trained F1"] -
+        heatmap_values["ELAT avg F1"]
+    )
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(13, 5.5),
+        gridspec_kw={"width_ratios": [2.0, 1.1]}
+    )
+    fig.suptitle(
+        "Adversarial-Trained F1 vs ELAT Reference F1",
+        fontsize=14,
+        fontweight="bold"
+    )
+
+    sns.heatmap(
+        heatmap_values,
+        annot=True,
+        fmt=".4f",
+        cmap="YlGnBu",
+        vmin=0,
+        vmax=1,
+        linewidths=1,
+        linecolor="white",
+        cbar_kws={"label": "F1 score"},
+        ax=axes[0],
+    )
+    axes[0].set_xlabel("")
+    axes[0].set_ylabel("")
+    axes[0].set_title("F1 Score Comparison")
+
+    sns.heatmap(
+        diff_values[["Difference vs ELAT"]],
+        annot=True,
+        fmt="+.4f",
+        cmap="RdYlGn",
+        center=0,
+        linewidths=1,
+        linecolor="white",
+        cbar_kws={"label": "F1 difference"},
+        ax=axes[1],
+    )
+    axes[1].set_xlabel("")
+    axes[1].set_ylabel("")
+    axes[1].set_title("Our F1 - ELAT F1")
+
+    note = (
+        f"ELAT reference F1 = {elat_f1:.2f} "
+        "(average recovered F1 reported by ELAT paper)"
+    )
+    fig.text(0.5, 0.02, note, ha="center", fontsize=10)
+
+    path = os.path.join(RESULTS_DIR, "elat_f1_heatmap.png")
+    plt.savefig(path, dpi=180, bbox_inches="tight", facecolor="white")
+    plt.show()
+    print(f"Saved: {path}")
+    return path
